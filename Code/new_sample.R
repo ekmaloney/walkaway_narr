@@ -20,3 +20,7 @@ new_sample <- full_sample %>%
               select(id, message)
 
 write_excel_csv(new_sample, file = here("Data/new_sample.csv"))
+
+
+
+

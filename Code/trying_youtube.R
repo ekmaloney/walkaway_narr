@@ -13,16 +13,12 @@ yt_links <- read_csv(here("Data/yt_links.csv"))
 
 test <- map_df(yt_links$Url, get_caption)
 
-sos <- test %>% 
-       select(text, vid) %>% 
-       nest(data = c(text)) %>% 
-       mutate(text = map(data, unlist), 
-       text = map_chr(text, paste, collapse = " "))
+yt_transcripts <- read_csv(here("Data/yt_transcripts.csv"))
 
-yt_data <- yt_links%>% 
-           mutate(vid = str_split(Url, "watch", simplify = TRUE)[,2],
-                  vid = str_remove_all(vid, "\\?v=")) %>% 
-           left_join(sos, by = "vid")
+collapsed_text <- aggregate(text ~ videoid, data = yt_transcripts, FUN = paste, collapse = "")
+
+write_csv(collapsed_text, file = here("Data/yt_transcript_collapsed.csv"))
   
   
-  
+first_100 <- collapsed_text %>% slice(1:100)
+write_csv(first_100, file = here("Data/yt_first_100.csv"))
