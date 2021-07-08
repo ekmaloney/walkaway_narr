@@ -1,0 +1,167 @@
+---
+title: "Jack London's Story Arc"
+author: "Nicolas Restrepo"
+date: "7/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidytext)
+library(readxl)
+library(textdata)
+library(stopwords)
+library(text2vec)
+library(igraph)
+here::here()
+theme_set(theme_classic())
+```
+
+## Introduction 
+
+Here, I am going to do rolling window sentiment analyses on Jack London's story to try to recover an arc. I'll begin by looking at the `get_sentiment()` function from tidytext. 
+
+## Get Sentiments
+
+Let's load in the data. 
+
+```{r}
+conversion_stories <- read_excel("~/Documents/walkaway_narr/Data/how_became_socialist.xlsx")
+conversion_stories$Author[1] <- "Hellen Keller"
+conversion_stories$Title[1] <- "How I Became a Socialist"
+tidy_cn <- conversion_stories %>% 
+  unnest_tokens(word, Text) %>% 
+  group_by(Author) %>% 
+  mutate(wordnumber = row_number()) %>% 
+  ungroup()
+
+```
+
+Now, I am going to extract the sentiment with differently sized rolling windows. I am also going to try to use different data. 
+
+```{r}
+# Create function to retrieve different windows
+# and different dictionaries
+
+rolling_window_sentiment <- function(dict) {
+  
+  sentiment_100 <- tidy_cn %>%
+    mutate(Author = as.factor(Author)) %>% 
+    inner_join(get_sentiments(dict)) %>%
+    count(Author, index = wordnumber %/% 100, sentiment) %>%
+    pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
+    mutate(sentiment = positive - negative) %>% 
+    filter(Author =="Jack London") %>% 
+    mutate(size_window = 100, 
+           dict = dict)
+  
+  sentiment_25 <- tidy_cn %>%
+    mutate(Author = as.factor(Author)) %>% 
+    inner_join(get_sentiments(dict)) %>%
+    count(Author, index = wordnumber %/% 25, sentiment) %>%
+    pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
+    mutate(sentiment = positive - negative) %>% 
+    filter(Author =="Jack London") %>% 
+    mutate(size_window = 25, 
+           dict = dict)
+  
+  sentiment_50 <- tidy_cn %>%
+    mutate(Author = as.factor(Author)) %>% 
+    inner_join(get_sentiments(dict)) %>%
+    count(Author, index = wordnumber %/% 50, sentiment) %>%
+    pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
+    mutate(sentiment = positive - negative) %>% 
+    filter(Author =="Jack London") %>% 
+    mutate(size_window = 50, 
+           dict = dict)
+  
+  sentiment_75 <- tidy_cn %>%
+    mutate(Author = as.factor(Author)) %>% 
+    inner_join(get_sentiments(dict)) %>%
+    count(Author, index = wordnumber %/% 75, sentiment) %>%
+    pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
+    mutate(sentiment = positive - negative) %>% 
+    filter(Author =="Jack London") %>% 
+    mutate(size_window = 75, 
+           dict = dict)
+  
+  full_sentiment <- rbind(sentiment_25, 
+                          sentiment_50, 
+                          sentiment_75, 
+                          sentiment_100)
+  return(full_sentiment)
+  
+}
+
+dict_collection <- c("bing",  "loughran", "nrc")
+
+full_sentiment <- map_df(dict_collection, 
+       rolling_window_sentiment)
+
+full_sentiment %>% 
+  ggplot(aes(index, sentiment, col = dict)) +
+  geom_col(show.legend = T, 
+           alpha = 0.6, 
+           fill = "white") +
+  facet_wrap(~size_window, 
+             scales = "free_x")
+
+```
+
+## Co-ocurrence matrix 
+
+```{r}
+jack_london <- tidy_cn %>% 
+  filter(Author == "Jack London")
+
+just_words <- jack_london$word
+
+top_100 <- qdapDictionaries::Top100Words
+top_100 <- top_100[-20]
+
+clean_words <- unlist(qdap::rm_stopwords(just_words, 
+                                  top_100))
+
+clean_words <- sort(unique(clean_words))
+
+cc_matrix <- matrix(0, 
+                    517, 
+                    517)
+colnames(cc_matrix) <- clean_words
+rownames(cc_matrix) <- clean_words
+
+start <- 1
+for (j in 1:61) {
+
+fragment <- just_words[start:(start+24)]
+
+words_appear <- which(clean_words %in% fragment)
+
+for (i in 1:length(words_appear)) {
+cc_matrix[words_appear[i],words_appear] <- cc_matrix[words_appear[i],words_appear]+1
+}
+
+start <- start+25
+}
+
+diag(cc_matrix) <- 0
+
+graph <- graph_from_adjacency_matrix(cc_matrix, 
+                                     mode = "undirected", 
+                                     weighted = T)
+
+plot(graph, 
+     layout = layout.fruchterman.reingold, # Force Directed Layout 
+  vertex.label.family = "sans",
+  vertex.label.cex = 0.2,
+  vertex.shape = "circle",
+  vertex.label.dist = 0.5,          # Labels of the nodes moved slightly
+  vertex.frame.color = adjustcolor("darkgray", alpha.f = .5),
+  vertex.label.color = 'black',     # Color of node names
+  vertex.label.font = 0.1,            # Font of node names
+  vertex.label = V(graph)$name, 
+  vertex.size = 2# font size of node names
+)
+```
+
